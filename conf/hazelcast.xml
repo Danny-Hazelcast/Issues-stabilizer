@@ -15,11 +15,14 @@
             </tcp-ip>
         </join>
     </network>
-    
-              <map name="default">
-    <eviction-policy>LRU</eviction-policy>
-    <eviction-percentage>10</eviction-percentage>
-  </map>
 
+    <map name="default">
+        <eviction-policy>LRU</eviction-policy>
+        <eviction-percentage>10</eviction-percentage>
+    </map>
+
+    <listeners>
+        <listener></listener>
+    </listeners>
 
 </hazelcast>
