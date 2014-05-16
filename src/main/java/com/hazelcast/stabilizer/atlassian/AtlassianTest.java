@@ -195,6 +195,8 @@ public class AtlassianTest {
         int mapIdx, keyIdx;
 
         public void run() {
+            long iteration = 0;
+
             while (!testContext.isStopped()) {
                 mapIdx = random.nextInt(maxMaps);
                 keyIdx = random.nextInt(keys.length);
@@ -227,6 +229,11 @@ public class AtlassianTest {
                 }
 
                 operations.incrementAndGet();
+
+                iteration++;
+                if(iteration % logFrequency == 0){
+                    log.info("At "+iteration);
+                }
             }
         }
 
