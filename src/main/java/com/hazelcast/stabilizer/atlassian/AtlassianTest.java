@@ -114,6 +114,12 @@ public class AtlassianTest {
             targetInstance.addDistributedObjectListener(new DistributedObjectListenerImpl());
         }
 
+    }
+
+    @Warmup
+    public void warmup() {
+        log.info("Warmup called");
+
         keys = new String[keyCount];
         values = new String[valueCount];
 
@@ -124,10 +130,7 @@ public class AtlassianTest {
         for (int k = 0; k < values.length; k++) {
             values[k] = makeString(valueLength);
         }
-    }
 
-    @Warmup
-    public void warmup() {
         for (int i = 0; i < maxMaps; i++) {
             IMap map = targetInstance.getMap(basename + i);
 
