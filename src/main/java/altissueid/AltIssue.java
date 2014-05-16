@@ -44,7 +44,7 @@ public class AltIssue {
     public int maxMaps = 60;
 
     public double writeProb = 0.3;
-    public double writeLockProb = 0.5;
+    public double writeUsingLockProb = 0.5;
     public double writeUnLockPauseProb = 0.5;
     public int minWriteUnLockPauseMillis = 500;
     public int maxWriteUnLockPauseMillis = 1000;
@@ -109,8 +109,10 @@ public class AltIssue {
                 }
             }
 
+            int v=0;
             for (int k = 0; k < keys.length; k++) {
-                map.put(keys[k], values[k]);
+                map.put(keys[k], values[v]);
+                v = (v + 1 == values.length ? 0: v + 1);
             }
         }
     }
@@ -179,7 +181,7 @@ public class AltIssue {
                     Object value = values[random.nextInt(values.length)];
 
                     boolean useLockThisTime;
-                    if (random.nextDouble() < writeLockProb) {
+                    if (random.nextDouble() < writeUsingLockProb) {
                         useLockThisTime=true;
                     }else{
                         useLockThisTime=false;
