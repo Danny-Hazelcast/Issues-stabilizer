@@ -265,7 +265,7 @@ public class AtlassianTest {
                     map.remove(key);
                 }
                 else if(chance < exicuteOnProb + removeProb + replaceProb + clearProb + getProb + writeProb){
-                    map.executeOnKey(key, new EntryProcessorImpl());
+                    map.executeOnKey(key, new EntryProcessorImpl(entryProcessorDelayNs));
                 }
 
                 else{
@@ -301,8 +301,14 @@ public class AtlassianTest {
 
 
 
-    public class EntryProcessorImpl implements  EntryProcessor {
-        @Override
+    public static class EntryProcessorImpl implements  EntryProcessor {
+
+        public long entryProcessorDelayNs=0;
+
+        public EntryProcessorImpl(long entryProcessorDelayNs){
+            this.entryProcessorDelayNs = entryProcessorDelayNs;
+        }
+
         public Object process(Map.Entry entry) {
             Utils.sleepNanos(entryProcessorDelayNs);
 
