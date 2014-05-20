@@ -49,7 +49,7 @@ public class AltIssue {
     public int minWriteUnLockPauseMillis = 500;
     public int maxWriteUnLockPauseMillis = 1000;
 
-    public double writeUsingPutProb = 0.5;
+    public double writeUsingPutProb = 0.6;
     public double writeUsingExpireProb = 0.5;
     public int minExpireMillis = 500;
     public int maxExpireMillis = 1000;
