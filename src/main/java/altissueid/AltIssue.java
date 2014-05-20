@@ -40,7 +40,7 @@ public class AltIssue {
     public int keyCount = 1000;
     public int valueCount = 1000;
     public int logFrequency = 10000;
-    public int performanceUpdateFrequency = 10000;
+    //public int performanceUpdateFrequency = 10000;
     public int maxMaps = 60;
 
     public double writeProb = 0.3;
