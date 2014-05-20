@@ -133,9 +133,10 @@ public class AtlassianTest {
             targetInstance.addDistributedObjectListener(new DistributedObjectListenerImpl());
         }
 
+        warmup();
     }
 
-    @Warmup
+
     public void warmup() {
         log.info("Warmup called");
 
