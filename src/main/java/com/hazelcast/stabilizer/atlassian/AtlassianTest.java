@@ -30,6 +30,8 @@ import com.hazelcast.core.MigrationEvent;
 import com.hazelcast.core.MigrationListener;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
+import com.hazelcast.map.EntryBackupProcessor;
+import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.stabilizer.Utils;
 import com.hazelcast.stabilizer.tests.TestContext;
 import com.hazelcast.stabilizer.tests.TestRunner;
@@ -41,6 +43,7 @@ import com.hazelcast.stabilizer.tests.annotations.Verify;
 import com.hazelcast.stabilizer.tests.annotations.Warmup;
 import com.hazelcast.stabilizer.tests.utils.ThreadSpawner;
 
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -57,14 +60,28 @@ public class AtlassianTest {
     public int valueLength = 1000;
     public int keyCount = 1000;
     public int valueCount = 1000;
-    public int logFrequency = 10000;
-    //public int performanceUpdateFrequency = 10000;
+    public int logFrequency = 100000;
     public int maxMaps = 60;
 
-    public double writeProb = 0.3;
+    public boolean randomDistributionUniform=false;
 
-    public double writeUsingPutProb = 0.6;
-    public double writeUsingExpireProb = 0.5;
+    //add up to 1
+    public double writeProb = 0.4;
+    public double getProb = 0.3;
+
+    public double clearProb = 0.05;
+    public double replaceProb = 0.1;
+    public double removeProb = 0.1;
+    public double exicuteOnProb = 0.05;
+    //
+
+
+    //add up to 1   (writeProb is splitup int sub styles)
+    public double writeUsingPutProb = 0.5;
+    public double writeUsingPutIfAbsent = 0.25;
+    public double writeUsingPutExpireProb = 0.25;
+    //
+
     public int minExpireMillis = 500;
     public int maxExpireMillis = 1000;
 
@@ -85,6 +102,8 @@ public class AtlassianTest {
 
     public long mapEntryListenerCount = 1;
     public long mapEntryListenerDelayNs = 0;
+
+    public long entryProcessorDelayNs=0;
 
     private String[] keys;
     private String[] values;
@@ -133,6 +152,7 @@ public class AtlassianTest {
 
         for (int i = 0; i < maxMaps; i++) {
             IMap map = targetInstance.getMap(basename + i);
+
 
             for (int count = 0; count < mapEntryListenerCount; count++) {
                 map.addEntryListener(new EntryListenerImpl(mapEntryListenerDelayNs), true);
@@ -198,37 +218,61 @@ public class AtlassianTest {
             long iteration = 0;
 
             while (!testContext.isStopped()) {
-                mapIdx = random.nextInt(maxMaps);
-                keyIdx = random.nextInt(keys.length);
+
+                if(randomDistributionUniform){
+                    mapIdx = random.nextInt(maxMaps);
+                    keyIdx = random.nextInt(keys.length);
+                }else{
+                    mapIdx = getLinnearRandomNumber(maxMaps);
+                    keyIdx = getLinnearRandomNumber(keys.length);
+                }
+
 
                 IMap map = targetInstance.getMap(basename + mapIdx);
                 Object key = keys[random.nextInt(keys.length)];
 
-                if (random.nextDouble() < writeProb) {
+                double chance = random.nextDouble();
+                if (chance < writeProb) {
+
                     Object value = values[random.nextInt(values.length)];
 
-                    if (random.nextDouble() < writeUsingPutProb) {
-                        if (random.nextDouble() < writeUsingExpireProb) {
-                            int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
-                            map.put(key, value, expire, TimeUnit.MILLISECONDS);
-                        } else {
-                            map.put(key, value);
-                        }
-
-                    } else {
-                        if (random.nextDouble() < writeUsingExpireProb) {
-                            int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
-                            map.set(key, value, expire, TimeUnit.MILLISECONDS);
-                        } else {
-                            map.set(key, value);
-                        }
-
+                    chance = random.nextDouble();
+                    if (chance < writeUsingPutProb) {
+                        map.put(key, value);
                     }
-                } else {
+                    else if(chance < writeUsingPutIfAbsent + writeUsingPutProb ){
+                        map.putIfAbsent(key, value);
+                    }
+                    else if ( chance <=  writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb) {
+                        int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
+                        map.put(key, value, expire, TimeUnit.MILLISECONDS);
+                    }
+                    else{
+                        log.info("DID NOT ADD UP to (1) "+writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb);
+                    }
+
+                }else if(chance < getProb + writeProb){
                     map.get(key);
                 }
+                else if(chance < clearProb + getProb + writeProb){
+                    map.clear();
+                }
+                else if(chance < replaceProb + clearProb + getProb + writeProb){
+                    Object value = values[random.nextInt(values.length)];
+                    map.replace(key, value);
+                }
+                else if(chance < removeProb + replaceProb + clearProb + getProb + writeProb){
+                    map.remove(key);
+                }
+                else if(chance < exicuteOnProb + removeProb + replaceProb + clearProb + getProb + writeProb){
+                    map.executeOnKey(key, new EntryProcessorImpl());
+                }
 
-                operations.incrementAndGet();
+                else{
+                    log.info("DID NOT ADD UP");
+                }
+
+
 
                 iteration++;
                 if(iteration % logFrequency == 0){
@@ -237,6 +281,39 @@ public class AtlassianTest {
             }
         }
 
+
+        public int getLinnearRandomNumber(int maxSize){
+            maxSize--;
+            //Get a linearly multiplied random number
+            int randomMultiplier = maxSize * (maxSize + 1) / 2;
+            int randomInt = random.nextInt(randomMultiplier);
+
+            //Linearly iterate through the possible values to find the correct one
+            int linearRandomNumber = 0;
+            for(int i=maxSize; randomInt >= 0; i--){
+                randomInt -= i;
+                linearRandomNumber++;
+            }
+
+            return linearRandomNumber;
+        }
+    }
+
+
+
+    public class EntryProcessorImpl implements  EntryProcessor {
+        @Override
+        public Object process(Map.Entry entry) {
+            Utils.sleepNanos(entryProcessorDelayNs);
+
+            return entry.getValue();
+        }
+
+        @Override
+        public EntryBackupProcessor getBackupProcessor() {
+            Utils.sleepNanos(entryProcessorDelayNs);
+            return null;
+        }
     }
 
 
