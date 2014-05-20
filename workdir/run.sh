@@ -1,8 +1,8 @@
 #!/bin/bash
 
-provisioner --scale 4
+provisioner --scale 3
 
-coordinator     --workerVmOptions "-ea -server -Xms2G -Xmx2G -XX:+PrintGC -XX:+HeapDumpOnOutOfMemoryError" \
+coordinator     --workerVmOptions "-server -Xms1800m -Xmx3584m -Djava.awt.headless=true -XX:+HeapDumpOnOutOfMemoryError -XX:+PrintGCDateStamps -Xloggc:gc.log -verboseg -XX:+PrintGCDetails -XX:+PrintTenuringDistribution -XX:+UseParallelGC -XX:+UseParallelOldGC -XX:MaxPermSize=300m" \
                 --clientHzFile      ../conf/client-hazelcast.xml \
                 --hzFile            ../conf/hazelcast.xml \
                 --clientWorkerCount 0 \
@@ -14,4 +14,3 @@ coordinator     --workerVmOptions "-ea -server -Xms2G -Xmx2G -XX:+PrintGC -XX:+H
 provisioner --download
 
 provisioner --terminate
-

@@ -1,0 +1,16 @@
+*.csv
+target/
+.project
+.classpath
+.settings/
+.idea/
+.patch
+*.iml
+.DS_Store
+*.log
+*.log.lck
+*.failure
+*.exception
+*.oome
+agents.txt
+workingdir/*

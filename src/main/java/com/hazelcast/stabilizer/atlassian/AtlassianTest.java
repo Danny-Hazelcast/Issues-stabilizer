@@ -13,14 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package altissueid;
+package com.hazelcast.stabilizer.atlassian;
 
-import com.hazelcast.core.*;
+import com.hazelcast.core.DistributedObjectEvent;
+import com.hazelcast.core.DistributedObjectListener;
+import com.hazelcast.core.EntryEvent;
+import com.hazelcast.core.EntryListener;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.IMap;
+import com.hazelcast.core.LifecycleEvent;
+import com.hazelcast.core.LifecycleListener;
+import com.hazelcast.core.MemberAttributeEvent;
+import com.hazelcast.core.MembershipEvent;
+import com.hazelcast.core.MembershipListener;
+import com.hazelcast.core.MigrationEvent;
+import com.hazelcast.core.MigrationListener;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
+import com.hazelcast.stabilizer.Utils;
 import com.hazelcast.stabilizer.tests.TestContext;
 import com.hazelcast.stabilizer.tests.TestRunner;
-import com.hazelcast.stabilizer.tests.annotations.*;
+import com.hazelcast.stabilizer.tests.annotations.Performance;
+import com.hazelcast.stabilizer.tests.annotations.Run;
+import com.hazelcast.stabilizer.tests.annotations.Setup;
+import com.hazelcast.stabilizer.tests.annotations.Teardown;
+import com.hazelcast.stabilizer.tests.annotations.Verify;
+import com.hazelcast.stabilizer.tests.annotations.Warmup;
 import com.hazelcast.stabilizer.tests.utils.ThreadSpawner;
 
 import java.util.Random;
@@ -28,9 +46,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class AltIssue {
+public class AtlassianTest {
 
-    private final static ILogger log = Logger.getLogger(AltIssue.class);
+    private final static ILogger log = Logger.getLogger(AtlassianTest.class);
     private final static String alphabet = "abcdefghijklmnopqrstuvwxyz1234567890";
 
     public String basename = "map";
@@ -44,22 +62,29 @@ public class AltIssue {
     public int maxMaps = 60;
 
     public double writeProb = 0.3;
-    public double writeUsingLockProb = 0.5;
-    public double writeUnLockPauseProb = 0.5;
-    public int minWriteUnLockPauseMillis = 500;
-    public int maxWriteUnLockPauseMillis = 1000;
 
     public double writeUsingPutProb = 0.6;
     public double writeUsingExpireProb = 0.5;
     public int minExpireMillis = 500;
     public int maxExpireMillis = 1000;
 
-    public boolean addMapEnteryListener = true;
-    public int addMapEnteryListenerCount = 1;
-    public boolean addLocalMapEntryListener = false;
-    public int addLocalMapEntryListenerCount = 1;
+    public int migrationListenerCount = 1;
+    public long migrationListenerDelayNs = 0;
 
-    public boolean randomDistributionUniform = false;
+    public int membershipListenerCount = 1;
+    public long membershipListenerDelayNs = 0;
+
+    public int lifecycleListenerCount = 1;
+    public long lifecycleListenerDelayNs = 0;
+
+    public int distributedObjectListenerCount = 1;
+    public long distributedObjectListenerDelayNs = 0;
+
+    public long localMapEntryListenerCount = 1;
+    public long localMapEntryListenerDelayNs = 0;
+
+    public long mapEntryListenerCount = 1;
+    public long mapEntryListenerDelayNs = 0;
 
     private String[] keys;
     private String[] values;
@@ -68,17 +93,32 @@ public class AltIssue {
     private TestContext testContext;
     private HazelcastInstance targetInstance;
 
-
     @Setup
     public void setup(TestContext testContext) throws Exception {
-
         this.testContext = testContext;
         targetInstance = testContext.getTargetInstance();
 
-        targetInstance.getPartitionService().addMigrationListener(new MigrationCounter());
-        targetInstance.getCluster().addMembershipListener(new MemberShipCounter());
-        targetInstance.getLifecycleService().addLifecycleListener(new LifecycleCounter());
-        targetInstance.addDistributedObjectListener(new DistributedObjectCounter());
+        for (int k = 0; k < migrationListenerCount; k++) {
+            targetInstance.getPartitionService().addMigrationListener(new MigrationnListenerImpl());
+        }
+
+        for (int k = 0; k < membershipListenerCount; k++) {
+            targetInstance.getCluster().addMembershipListener(new MembershipListenerImpl());
+        }
+
+        for (int k = 0; k < lifecycleListenerCount; k++) {
+            targetInstance.getLifecycleService().addLifecycleListener(new LifecycleListenerImpl());
+        }
+
+        for (int k = 0; k < distributedObjectListenerCount; k++) {
+            targetInstance.addDistributedObjectListener(new DistributedObjectListenerImpl());
+        }
+
+    }
+
+    @Warmup
+    public void warmup() {
+        log.info("Warmup called");
 
         keys = new String[keyCount];
         values = new String[valueCount];
@@ -90,29 +130,22 @@ public class AltIssue {
         for (int k = 0; k < values.length; k++) {
             values[k] = makeString(valueLength);
         }
-    }
 
-    @Warmup
-    public void warmup(){
-        for(int i=0; i< maxMaps; i++){
-            IMap map = targetInstance.getMap(basename+i);
+        for (int i = 0; i < maxMaps; i++) {
+            IMap map = targetInstance.getMap(basename + i);
 
-            if(addMapEnteryListener){
-                for(int count=0; count<addMapEnteryListenerCount; count++){
-                    map.addEntryListener(new EntryCounter(), true);
-                }
+            for (int count = 0; count < mapEntryListenerCount; count++) {
+                map.addEntryListener(new EntryListenerImpl(mapEntryListenerDelayNs), true);
             }
 
-            if(addLocalMapEntryListener){
-                for(int count=0; count<addLocalMapEntryListenerCount; count++){
-                    map.addLocalEntryListener(new EntryCounter());
-                }
+            for (int count = 0; count < localMapEntryListenerCount; count++) {
+                map.addLocalEntryListener(new EntryListenerImpl(localMapEntryListenerDelayNs));
             }
 
-            int v=0;
+            int v = 0;
             for (int k = 0; k < keys.length; k++) {
                 map.put(keys[k], values[v]);
-                v = (v + 1 == values.length ? 0: v + 1);
+                v = (v + 1 == values.length ? 0 : v + 1);
             }
         }
     }
@@ -140,8 +173,8 @@ public class AltIssue {
 
     @Teardown
     public void globalTearDown() throws Exception {
-        for(int i=0; i< maxMaps; i++){
-            IMap map = targetInstance.getMap(basename+"-"+i);
+        for (int i = 0; i < maxMaps; i++) {
+            IMap map = targetInstance.getMap(basename + "-" + i);
             map.destroy();
         }
     }
@@ -153,9 +186,8 @@ public class AltIssue {
 
     @Verify
     public void verify() throws Exception {
-        log.info("operations = "+operations.get());
+        log.info("operations = " + operations.get());
     }
-
 
 
     private class Worker implements Runnable {
@@ -163,210 +195,161 @@ public class AltIssue {
         int mapIdx, keyIdx;
 
         public void run() {
+            long iteration = 0;
+
             while (!testContext.isStopped()) {
+                mapIdx = random.nextInt(maxMaps);
+                keyIdx = random.nextInt(keys.length);
 
-                if(randomDistributionUniform){
-                    mapIdx = random.nextInt(maxMaps);
-                    keyIdx = random.nextInt(keys.length);
-                }else{
-                    mapIdx = getLinnearRandomNumber(maxMaps);
-                    keyIdx = getLinnearRandomNumber(keys.length);
-                }
-
-                IMap map = targetInstance.getMap(basename+mapIdx);
+                IMap map = targetInstance.getMap(basename + mapIdx);
                 Object key = keys[random.nextInt(keys.length)];
 
                 if (random.nextDouble() < writeProb) {
-
                     Object value = values[random.nextInt(values.length)];
 
-                    boolean useLockThisTime;
-                    if (random.nextDouble() < writeUsingLockProb) {
-                        useLockThisTime=true;
-                    }else{
-                        useLockThisTime=false;
-                    }
-
-                    if(useLockThisTime){
-                        map.lock(key);
-                    }
-                    try{
-                        if (random.nextDouble() < writeUsingPutProb) {
-
-                            if(random.nextDouble() < writeUsingExpireProb) {
-                                int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
-                                map.put(key, value, expire, TimeUnit.MILLISECONDS);
-                            }else{
-                                map.put(key, value);
-                            }
-
+                    if (random.nextDouble() < writeUsingPutProb) {
+                        if (random.nextDouble() < writeUsingExpireProb) {
+                            int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
+                            map.put(key, value, expire, TimeUnit.MILLISECONDS);
                         } else {
-
-                            if(random.nextDouble() < writeUsingExpireProb) {
-                                int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
-                                map.set(key, value, expire, TimeUnit.MILLISECONDS);
-                            }else{
-                                map.set(key, value);
-                            }
-
+                            map.put(key, value);
                         }
-                    }finally {
-                        if(useLockThisTime){
 
-                            if(random.nextDouble() < writeUnLockPauseProb){
-                                int sleep = random.nextInt(maxWriteUnLockPauseMillis) + minWriteUnLockPauseMillis;
-                                try {
-                                    Thread.sleep(sleep);
-                                } catch (InterruptedException e){}
-                            }
-
-                            map.unlock(key);
+                    } else {
+                        if (random.nextDouble() < writeUsingExpireProb) {
+                            int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
+                            map.set(key, value, expire, TimeUnit.MILLISECONDS);
+                        } else {
+                            map.set(key, value);
                         }
+
                     }
                 } else {
-
                     map.get(key);
                 }
 
                 operations.incrementAndGet();
+
+                iteration++;
+                if(iteration % logFrequency == 0){
+                    log.info("At "+iteration);
+                }
             }
         }
 
-        public int getLinnearRandomNumber(int maxSize){
-            maxSize--;
-            //Get a linearly multiplied random number
-            int randomMultiplier = maxSize * (maxSize + 1) / 2;
-            int randomInt = random.nextInt(randomMultiplier);
-
-            //Linearly iterate through the possible values to find the correct one
-            int linearRandomNumber = 0;
-            for(int i=maxSize; randomInt >= 0; i--){
-                randomInt -= i;
-                linearRandomNumber++;
-            }
-
-            return linearRandomNumber;
-        }
     }
 
 
-
-
-    public static void main(String[] args) throws Throwable {
-        //HazelcastInstance hz1 = Hazelcast.newHazelcastInstance();
-        //HazelcastInstance hz2 = Hazelcast.newHazelcastInstance();
-
-        new TestRunner(new AltIssue()).run();
-    }
-
-
-    public class MigrationCounter implements MigrationListener {
+    public class MigrationnListenerImpl implements MigrationListener {
         public final AtomicInteger startedCount = new AtomicInteger();
         public final AtomicInteger completedCount = new AtomicInteger();
         public final AtomicInteger failedCount = new AtomicInteger();
 
         @Override
         public void migrationStarted(MigrationEvent migrationEvent) {
-            log.info(migrationEvent.toString());
+            Utils.sleepNanos(migrationListenerDelayNs);
             startedCount.incrementAndGet();
         }
 
         @Override
         public void migrationCompleted(MigrationEvent migrationEvent) {
-            log.info(migrationEvent.toString());
+            Utils.sleepNanos(migrationListenerDelayNs);
             completedCount.incrementAndGet();
         }
 
         @Override
         public void migrationFailed(MigrationEvent migrationEvent) {
-            log.info(migrationEvent.toString());
+            Utils.sleepNanos(migrationListenerDelayNs);
             failedCount.incrementAndGet();
         }
-    };
+    }
 
 
-    public class MemberShipCounter implements MembershipListener {
+    public class MembershipListenerImpl implements MembershipListener {
         public final AtomicInteger addCount = new AtomicInteger();
         public final AtomicInteger removeCount = new AtomicInteger();
         public final AtomicInteger updateCount = new AtomicInteger();
 
         @Override
         public void memberAdded(MembershipEvent membershipEvent) {
-            log.info(membershipEvent.toString());
+            Utils.sleepNanos(membershipListenerDelayNs);
             addCount.incrementAndGet();
         }
 
         @Override
         public void memberRemoved(MembershipEvent membershipEvent) {
-            log.info(membershipEvent.toString());
+            Utils.sleepNanos(membershipListenerDelayNs);
             removeCount.incrementAndGet();
         }
 
         @Override
         public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
-            log.info(memberAttributeEvent.toString());
+            Utils.sleepNanos(membershipListenerDelayNs);
             updateCount.incrementAndGet();
         }
-    };
+    }
 
-    public class LifecycleCounter implements LifecycleListener{
+    public class LifecycleListenerImpl implements LifecycleListener {
         public final AtomicInteger count = new AtomicInteger();
 
         @Override
         public void stateChanged(LifecycleEvent lifecycleEvent) {
-            log.info(lifecycleEvent.toString());
+            Utils.sleepNanos(lifecycleListenerDelayNs);
             count.incrementAndGet();
         }
     }
 
 
-    public class DistributedObjectCounter implements DistributedObjectListener{
+    public class DistributedObjectListenerImpl implements DistributedObjectListener {
         public final AtomicInteger addCount = new AtomicInteger();
         public final AtomicInteger removeCount = new AtomicInteger();
 
         @Override
         public void distributedObjectCreated(DistributedObjectEvent distributedObjectEvent) {
-            log.info(distributedObjectEvent.toString());
+            Utils.sleepNanos(distributedObjectListenerDelayNs);
             addCount.incrementAndGet();
         }
 
         @Override
         public void distributedObjectDestroyed(DistributedObjectEvent distributedObjectEvent) {
-            log.info(distributedObjectEvent.toString());
+            Utils.sleepNanos(distributedObjectListenerDelayNs);
             removeCount.incrementAndGet();
         }
     }
 
-    public class EntryCounter implements EntryListener<Object, Object> {
+    public class EntryListenerImpl implements EntryListener<Object, Object> {
 
         public final AtomicInteger addCount = new AtomicInteger();
         public final AtomicInteger removeCount = new AtomicInteger();
         public final AtomicInteger updateCount = new AtomicInteger();
         public final AtomicInteger evictCount = new AtomicInteger();
+        private final long delayNs;
 
-        public EntryCounter(){}
+        public EntryListenerImpl(long delayNs) {
+            this.delayNs = delayNs;
+        }
 
         @Override
         public void entryAdded(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            //log.info(objectObjectEntryEvent.toString());
+            Utils.sleepNanos(delayNs);
             addCount.incrementAndGet();
         }
 
         @Override
         public void entryRemoved(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            //log.info(objectObjectEntryEvent.toString());
+            Utils.sleepNanos(delayNs);
             removeCount.incrementAndGet();
         }
 
         @Override
         public void entryUpdated(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            //log.info(objectObjectEntryEvent.toString());
+            Utils.sleepNanos(delayNs);
             updateCount.incrementAndGet();
         }
 
         @Override
         public void entryEvicted(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            //log.info(objectObjectEntryEvent.toString());
+            Utils.sleepNanos(delayNs);
             evictCount.incrementAndGet();
         }
 
@@ -381,4 +364,7 @@ public class AltIssue {
         }
     }
 
+    public static void main(String[] args) throws Throwable {
+        new TestRunner(new AtlassianTest()).run();
+    }
 }
