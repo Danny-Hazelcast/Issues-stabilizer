@@ -38,8 +38,7 @@ import com.hazelcast.stabilizer.tests.TestRunner;
 import com.hazelcast.stabilizer.tests.annotations.*;
 import com.hazelcast.stabilizer.tests.utils.ThreadSpawner;
 
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -49,33 +48,33 @@ public class AtlassianTest {
     private final static String alphabet = "abcdefghijklmnopqrstuvwxyz1234567890";
 
     public String basename = "map";
-    public int threadCount = 30;
+    public int threadCount = 10;
     public int keyLength = 100;
     public int valueLength = 100;
-    public int keyCount = 100000;
-    public int valueCount = 100000;
-    public int maxMaps = 40;
+    public int keyCount = 1000;
+    public int valueCount = 1000;
+    public int maxMaps = 10;
 
-    public boolean randomDistributionUniform=false;
+    public boolean randomDistributionUniform=true;
 
     //add up to 1
     public double writeProb = 0.4;
-    public double getProb = 0.3;
+    public double getProb = 0.2;
 
-    public double clearProb = 0.05;
-    public double replaceProb = 0.1;
+    public double clearProb = 0;
+    public double replaceProb = 0.15;
     public double removeProb = 0.1;
-    public double exicuteOnProb = 0.05;
+    public double exicuteOnProb = 0.15;
     //
 
     //add up to 1   (writeProb is splitup int sub styles)
-    public double writeUsingPutProb = 0.5;
-    public double writeUsingPutIfAbsent = 0.25;
-    public double writeUsingPutExpireProb = 0.25;
+    public double writeUsingPutProb = 0.15;
+    public double writeUsingPutIfAbsent = 0.15;
+    public double writeUsingPutExpireProb = 0.7;
     //
 
-    public int minExpireMillis = 500;
-    public int maxExpireMillis = 1000;
+    public int minExpireMillis = 200;
+    public int maxExpireMillis = 8000;
 
     public int migrationListenerCount = 1;
     public int migrationListenerDelayMills = 40;
@@ -89,11 +88,11 @@ public class AtlassianTest {
     public int distributedObjectListenerCount = 1;
     public int distributedObjectListenerDelayMills = 10;
 
-    public int localMapEntryListenerCount = 1;
+    public int localMapEntryListenerCount = 0;
     public int localMapEntryListenerDelayMills = 20;
 
-    public int mapEntryListenerCount = 3;
-    public int mapEntryListenerDelayMills = 50;
+    public int mapEntryListenerCount = 1;
+    public int mapEntryListenerDelayMills = 0;
 
     public int entryProcessorDelayMills = 100;
 
@@ -103,25 +102,37 @@ public class AtlassianTest {
     private TestContext testContext;
     private HazelcastInstance targetInstance;
 
+    private List listeners = new ArrayList();
+    private Map<Integer, Object> lastKeyPutinMap = new HashMap();
+
+
     @Setup
     public void setup(TestContext testContext) throws Exception {
         this.testContext = testContext;
         targetInstance = testContext.getTargetInstance();
 
         for (int k = 0; k < migrationListenerCount; k++) {
-            targetInstance.getPartitionService().addMigrationListener(new MigrationnListenerImpl());
+            MigrationnListenerImpl l = new MigrationnListenerImpl();
+            listeners.add(l);
+            targetInstance.getPartitionService().addMigrationListener(l);
         }
 
         for (int k = 0; k < membershipListenerCount; k++) {
-            targetInstance.getCluster().addMembershipListener(new MembershipListenerImpl());
+            MembershipListenerImpl l = new MembershipListenerImpl();
+            listeners.add(l);
+            targetInstance.getCluster().addMembershipListener(l);
         }
 
         for (int k = 0; k < lifecycleListenerCount; k++) {
-            targetInstance.getLifecycleService().addLifecycleListener(new LifecycleListenerImpl());
+            LifecycleListenerImpl l = new LifecycleListenerImpl();
+            listeners.add(l);
+            targetInstance.getLifecycleService().addLifecycleListener(l);
         }
 
         for (int k = 0; k < distributedObjectListenerCount; k++) {
-            targetInstance.addDistributedObjectListener(new DistributedObjectListenerImpl());
+            DistributedObjectListenerImpl l = new DistributedObjectListenerImpl();
+            listeners.add(l);
+            targetInstance.addDistributedObjectListener(l);
         }
         warmup();
     }
@@ -145,11 +156,16 @@ public class AtlassianTest {
             IMap map = targetInstance.getMap(basename + i);
 
             for (int count = 0; count < mapEntryListenerCount; count++) {
-                map.addEntryListener(new EntryListenerImpl(mapEntryListenerDelayMills), true);
+                EntryListenerImpl l = new EntryListenerImpl(mapEntryListenerDelayMills);
+                listeners.add(l);
+                map.addEntryListener(l, true);
             }
 
             for (int count = 0; count < localMapEntryListenerCount; count++) {
-                map.addLocalEntryListener(new EntryListenerImpl(localMapEntryListenerDelayMills));
+                EntryListenerImpl l = new EntryListenerImpl(localMapEntryListenerDelayMills);
+                listeners.add(l);
+
+                map.addLocalEntryListener(l);
             }
 
             int v = 0;
@@ -157,6 +173,7 @@ public class AtlassianTest {
                 map.put(keys[k], values[v]);
                 v = (v + 1 == values.length ? 0 : v + 1);
             }
+            lastKeyPutinMap.put(i, map.get(keys[keys.length-1]));
         }
         log.info("===WARMUP===");
     }
@@ -197,7 +214,14 @@ public class AtlassianTest {
 
     @Verify
     public void verify() throws Exception {
-        log.info("verify = ");
+        for(Object o : listeners){
+            log.info(o.toString());
+        }
+
+        for (int i = 0; i < maxMaps; i++) {
+            IMap map = targetInstance.getMap(basename + i);
+            log.info(map.toString()+" sz="+map.size());
+        }
     }
 
 
@@ -218,7 +242,6 @@ public class AtlassianTest {
                     keyIdx = getLinnearRandomNumber(keys.length);
                 }
 
-
                 IMap map = targetInstance.getMap(basename + mapIdx);
                 Object key = keys[random.nextInt(keys.length)];
 
@@ -226,6 +249,8 @@ public class AtlassianTest {
                 if (chance < writeProb) {
 
                     Object value = values[random.nextInt(values.length)];
+
+                    lastKeyPutinMap.put(mapIdx, key);
 
                     chance = random.nextDouble();
                     if (chance < writeUsingPutProb) {
@@ -243,19 +268,24 @@ public class AtlassianTest {
                     }
 
                 }else if(chance < getProb + writeProb){
+                    key = lastKeyPutinMap.get(mapIdx);
                     map.get(key);
                 }
                 else if(chance < clearProb + getProb + writeProb){
                     map.clear();
                 }
                 else if(chance < replaceProb + clearProb + getProb + writeProb){
+                    key = lastKeyPutinMap.get(mapIdx);
                     Object value = values[random.nextInt(values.length)];
                     map.replace(key, value);
                 }
                 else if(chance < removeProb + replaceProb + clearProb + getProb + writeProb){
+                    key = lastKeyPutinMap.get(mapIdx);
                     map.remove(key);
                 }
                 else if(chance < exicuteOnProb + removeProb + replaceProb + clearProb + getProb + writeProb){
+                    //log.info(" process on keys ");
+                    key = lastKeyPutinMap.get(mapIdx);
                     map.executeOnKey(key, new EntryProcessorImpl(entryProcessorDelayMills));
                 }
                 else{
@@ -265,7 +295,6 @@ public class AtlassianTest {
         }
 
         public int getLinnearRandomNumber(int maxSize){
-            maxSize--;
             //Get a linearly multiplied random number
             int randomMultiplier = maxSize * (maxSize + 1) / 2;
             int randomInt = random.nextInt(randomMultiplier);
@@ -302,6 +331,13 @@ public class AtlassianTest {
             Utils.sleepMillis(entryProcessorDelayMills);
             return null;
         }
+
+        @Override
+        public String toString() {
+            return "EntryProcessorImpl{" +
+                    "entryProcessorDelayMills=" + entryProcessorDelayMills +
+                    '}';
+        }
     }
 
 
@@ -326,6 +362,15 @@ public class AtlassianTest {
         public void migrationFailed(MigrationEvent migrationEvent) {
             Utils.sleepMillis(migrationListenerDelayMills);
             failedCount.incrementAndGet();
+        }
+
+        @Override
+        public String toString() {
+            return "MigrationnListenerImpl{" +
+                    "startedCount=" + startedCount +
+                    ", completedCount=" + completedCount +
+                    ", failedCount=" + failedCount +
+                    '}';
         }
     }
 
@@ -352,6 +397,15 @@ public class AtlassianTest {
             Utils.sleepMillis(membershipListenerDelayMills);
             updateCount.incrementAndGet();
         }
+
+        @Override
+        public String toString() {
+            return "MembershipListenerImpl{" +
+                    "addCount=" + addCount +
+                    ", removeCount=" + removeCount +
+                    ", updateCount=" + updateCount +
+                    '}';
+        }
     }
 
     public class LifecycleListenerImpl implements LifecycleListener {
@@ -361,6 +415,13 @@ public class AtlassianTest {
         public void stateChanged(LifecycleEvent lifecycleEvent) {
             Utils.sleepMillis(lifecycleListenerDelayMills);
             count.incrementAndGet();
+        }
+
+        @Override
+        public String toString() {
+            return "LifecycleListenerImpl{" +
+                    "count=" + count +
+                    '}';
         }
     }
 
@@ -379,6 +440,14 @@ public class AtlassianTest {
         public void distributedObjectDestroyed(DistributedObjectEvent distributedObjectEvent) {
             Utils.sleepMillis(distributedObjectListenerDelayMills);
             removeCount.incrementAndGet();
+        }
+
+        @Override
+        public String toString() {
+            return "DistributedObjectListenerImpl{" +
+                    "addCount=" + addCount +
+                    ", removeCount=" + removeCount +
+                    '}';
         }
     }
 
