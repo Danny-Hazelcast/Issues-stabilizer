@@ -126,7 +126,7 @@ public class AtlassianTest {
     }
 
     @Warmup
-    public void warmup() {
+    public boolean warmup() {
         log.info("===WARMUP===");
 
         keys = new String[keyCount];
@@ -158,6 +158,7 @@ public class AtlassianTest {
             }
         }
         log.info("===WARMUP===");
+        return true;
     }
 
     private String makeString(int length) {
