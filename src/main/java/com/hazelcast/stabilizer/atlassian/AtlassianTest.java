@@ -35,19 +35,13 @@ import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.stabilizer.Utils;
 import com.hazelcast.stabilizer.tests.TestContext;
 import com.hazelcast.stabilizer.tests.TestRunner;
-import com.hazelcast.stabilizer.tests.annotations.Performance;
-import com.hazelcast.stabilizer.tests.annotations.Run;
-import com.hazelcast.stabilizer.tests.annotations.Setup;
-import com.hazelcast.stabilizer.tests.annotations.Teardown;
-import com.hazelcast.stabilizer.tests.annotations.Verify;
-import com.hazelcast.stabilizer.tests.annotations.Warmup;
+import com.hazelcast.stabilizer.tests.annotations.*;
 import com.hazelcast.stabilizer.tests.utils.ThreadSpawner;
 
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class AtlassianTest {
 
@@ -55,13 +49,12 @@ public class AtlassianTest {
     private final static String alphabet = "abcdefghijklmnopqrstuvwxyz1234567890";
 
     public String basename = "map";
-    public int threadCount = 10;
-    public int keyLength = 1000;
-    public int valueLength = 1000;
-    public int keyCount = 1000;
-    public int valueCount = 1000;
-    public int logFrequency = 100000;
-    public int maxMaps = 60;
+    public int threadCount = 30;
+    public int keyLength = 100;
+    public int valueLength = 100;
+    public int keyCount = 100000;
+    public int valueCount = 100000;
+    public int maxMaps = 40;
 
     public boolean randomDistributionUniform=false;
 
@@ -75,7 +68,6 @@ public class AtlassianTest {
     public double exicuteOnProb = 0.05;
     //
 
-
     //add up to 1   (writeProb is splitup int sub styles)
     public double writeUsingPutProb = 0.5;
     public double writeUsingPutIfAbsent = 0.25;
@@ -86,29 +78,28 @@ public class AtlassianTest {
     public int maxExpireMillis = 1000;
 
     public int migrationListenerCount = 1;
-    public long migrationListenerDelayNs = 0;
+    public int migrationListenerDelayMills = 40;
 
     public int membershipListenerCount = 1;
-    public long membershipListenerDelayNs = 0;
+    public int membershipListenerDelayMills = 30;
 
     public int lifecycleListenerCount = 1;
-    public long lifecycleListenerDelayNs = 0;
+    public int lifecycleListenerDelayMills = 20;
 
     public int distributedObjectListenerCount = 1;
-    public long distributedObjectListenerDelayNs = 0;
+    public int distributedObjectListenerDelayMills = 10;
 
-    public long localMapEntryListenerCount = 1;
-    public long localMapEntryListenerDelayNs = 0;
+    public int localMapEntryListenerCount = 1;
+    public int localMapEntryListenerDelayMills = 20;
 
-    public long mapEntryListenerCount = 1;
-    public long mapEntryListenerDelayNs = 0;
+    public int mapEntryListenerCount = 3;
+    public int mapEntryListenerDelayMills = 50;
 
-    public long entryProcessorDelayNs=0;
+    public int entryProcessorDelayMills = 100;
+
 
     private String[] keys;
     private String[] values;
-    private final AtomicLong operations = new AtomicLong();
-
     private TestContext testContext;
     private HazelcastInstance targetInstance;
 
@@ -132,13 +123,11 @@ public class AtlassianTest {
         for (int k = 0; k < distributedObjectListenerCount; k++) {
             targetInstance.addDistributedObjectListener(new DistributedObjectListenerImpl());
         }
-
-        warmup();
     }
 
-
+    @Warmup
     public void warmup() {
-        log.info("Warmup called");
+        log.info("===WARMUP===");
 
         keys = new String[keyCount];
         values = new String[valueCount];
@@ -154,13 +143,12 @@ public class AtlassianTest {
         for (int i = 0; i < maxMaps; i++) {
             IMap map = targetInstance.getMap(basename + i);
 
-
             for (int count = 0; count < mapEntryListenerCount; count++) {
-                map.addEntryListener(new EntryListenerImpl(mapEntryListenerDelayNs), true);
+                map.addEntryListener(new EntryListenerImpl(mapEntryListenerDelayMills), true);
             }
 
             for (int count = 0; count < localMapEntryListenerCount; count++) {
-                map.addLocalEntryListener(new EntryListenerImpl(localMapEntryListenerDelayNs));
+                map.addLocalEntryListener(new EntryListenerImpl(localMapEntryListenerDelayMills));
             }
 
             int v = 0;
@@ -169,6 +157,7 @@ public class AtlassianTest {
                 v = (v + 1 == values.length ? 0 : v + 1);
             }
         }
+        log.info("===WARMUP===");
     }
 
     private String makeString(int length) {
@@ -195,19 +184,9 @@ public class AtlassianTest {
     @Teardown
     public void globalTearDown() throws Exception {
         for (int i = 0; i < maxMaps; i++) {
-            IMap map = targetInstance.getMap(basename + "-" + i);
+            IMap map = targetInstance.getMap(basename + i);
             map.destroy();
         }
-    }
-
-    @Performance
-    public long getOperationCount() {
-        return operations.get();
-    }
-
-    @Verify
-    public void verify() throws Exception {
-        log.info("operations = " + operations.get());
     }
 
 
@@ -244,7 +223,7 @@ public class AtlassianTest {
                     else if(chance < writeUsingPutIfAbsent + writeUsingPutProb ){
                         map.putIfAbsent(key, value);
                     }
-                    else if ( chance <=  writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb) {
+                    else if ( chance <  writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb) {
                         int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
                         map.put(key, value, expire, TimeUnit.MILLISECONDS);
                     }
@@ -266,22 +245,13 @@ public class AtlassianTest {
                     map.remove(key);
                 }
                 else if(chance < exicuteOnProb + removeProb + replaceProb + clearProb + getProb + writeProb){
-                    map.executeOnKey(key, new EntryProcessorImpl(entryProcessorDelayNs));
+                    map.executeOnKey(key, new EntryProcessorImpl(entryProcessorDelayMills));
                 }
-
                 else{
                     log.info("DID NOT ADD UP");
                 }
-
-
-
-                iteration++;
-                if(iteration % logFrequency == 0){
-                    log.info("At "+iteration);
-                }
             }
         }
-
 
         public int getLinnearRandomNumber(int maxSize){
             maxSize--;
@@ -304,21 +274,21 @@ public class AtlassianTest {
 
     public static class EntryProcessorImpl implements  EntryProcessor {
 
-        public long entryProcessorDelayNs=0;
+        public int entryProcessorDelayMills =0;
 
-        public EntryProcessorImpl(long entryProcessorDelayNs){
-            this.entryProcessorDelayNs = entryProcessorDelayNs;
+        public EntryProcessorImpl(int entryProcessorDelayNs){
+            this.entryProcessorDelayMills = entryProcessorDelayNs;
         }
 
         public Object process(Map.Entry entry) {
-            Utils.sleepNanos(entryProcessorDelayNs);
+            Utils.sleepMillis(entryProcessorDelayMills);
 
             return entry.getValue();
         }
 
         @Override
         public EntryBackupProcessor getBackupProcessor() {
-            Utils.sleepNanos(entryProcessorDelayNs);
+            Utils.sleepMillis(entryProcessorDelayMills);
             return null;
         }
     }
@@ -331,19 +301,19 @@ public class AtlassianTest {
 
         @Override
         public void migrationStarted(MigrationEvent migrationEvent) {
-            Utils.sleepNanos(migrationListenerDelayNs);
+            Utils.sleepMillis(migrationListenerDelayMills);
             startedCount.incrementAndGet();
         }
 
         @Override
         public void migrationCompleted(MigrationEvent migrationEvent) {
-            Utils.sleepNanos(migrationListenerDelayNs);
+            Utils.sleepMillis(migrationListenerDelayMills);
             completedCount.incrementAndGet();
         }
 
         @Override
         public void migrationFailed(MigrationEvent migrationEvent) {
-            Utils.sleepNanos(migrationListenerDelayNs);
+            Utils.sleepMillis(migrationListenerDelayMills);
             failedCount.incrementAndGet();
         }
     }
@@ -356,19 +326,19 @@ public class AtlassianTest {
 
         @Override
         public void memberAdded(MembershipEvent membershipEvent) {
-            Utils.sleepNanos(membershipListenerDelayNs);
+            Utils.sleepMillis(membershipListenerDelayMills);
             addCount.incrementAndGet();
         }
 
         @Override
         public void memberRemoved(MembershipEvent membershipEvent) {
-            Utils.sleepNanos(membershipListenerDelayNs);
+            Utils.sleepMillis(membershipListenerDelayMills);
             removeCount.incrementAndGet();
         }
 
         @Override
         public void memberAttributeChanged(MemberAttributeEvent memberAttributeEvent) {
-            Utils.sleepNanos(membershipListenerDelayNs);
+            Utils.sleepMillis(membershipListenerDelayMills);
             updateCount.incrementAndGet();
         }
     }
@@ -378,7 +348,7 @@ public class AtlassianTest {
 
         @Override
         public void stateChanged(LifecycleEvent lifecycleEvent) {
-            Utils.sleepNanos(lifecycleListenerDelayNs);
+            Utils.sleepMillis(lifecycleListenerDelayMills);
             count.incrementAndGet();
         }
     }
@@ -390,13 +360,13 @@ public class AtlassianTest {
 
         @Override
         public void distributedObjectCreated(DistributedObjectEvent distributedObjectEvent) {
-            Utils.sleepNanos(distributedObjectListenerDelayNs);
+            Utils.sleepMillis(distributedObjectListenerDelayMills);
             addCount.incrementAndGet();
         }
 
         @Override
         public void distributedObjectDestroyed(DistributedObjectEvent distributedObjectEvent) {
-            Utils.sleepNanos(distributedObjectListenerDelayNs);
+            Utils.sleepMillis(distributedObjectListenerDelayMills);
             removeCount.incrementAndGet();
         }
     }
@@ -407,33 +377,33 @@ public class AtlassianTest {
         public final AtomicInteger removeCount = new AtomicInteger();
         public final AtomicInteger updateCount = new AtomicInteger();
         public final AtomicInteger evictCount = new AtomicInteger();
-        private final long delayNs;
+        private final int delay;
 
-        public EntryListenerImpl(long delayNs) {
-            this.delayNs = delayNs;
+        public EntryListenerImpl(int delayNs) {
+            this.delay = delayNs;
         }
 
         @Override
         public void entryAdded(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            Utils.sleepNanos(delayNs);
+            Utils.sleepMillis(delay);
             addCount.incrementAndGet();
         }
 
         @Override
         public void entryRemoved(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            Utils.sleepNanos(delayNs);
+            Utils.sleepMillis(delay);
             removeCount.incrementAndGet();
         }
 
         @Override
         public void entryUpdated(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            Utils.sleepNanos(delayNs);
+            Utils.sleepMillis(delay);
             updateCount.incrementAndGet();
         }
 
         @Override
         public void entryEvicted(EntryEvent<Object, Object> objectObjectEntryEvent) {
-            Utils.sleepNanos(delayNs);
+            Utils.sleepMillis(delay);
             evictCount.incrementAndGet();
         }
 
