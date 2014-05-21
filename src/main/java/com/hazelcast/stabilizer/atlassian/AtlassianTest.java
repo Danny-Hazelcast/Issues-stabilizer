@@ -189,6 +189,16 @@ public class AtlassianTest {
         }
     }
 
+    @Performance
+    public long getOperationCount() {
+        return 1;
+    }
+
+    @Verify
+    public void verify() throws Exception {
+        log.info("verify = ");
+    }
+
 
     private class Worker implements Runnable {
         private final Random random = new Random();
