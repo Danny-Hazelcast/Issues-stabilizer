@@ -52,7 +52,7 @@ public class AtlassianTest {
     public int valueLength = 100;
     public int keyCount = 1000;
     public int valueCount = 1000;
-    public int maxMaps = 10;
+    public int maxMaps = 50;
 
     public boolean randomDistributionUniform=false;
 
@@ -103,6 +103,8 @@ public class AtlassianTest {
 
     private List listeners = new ArrayList();
 
+    ScrambledZipfianGenerator mapsZipfian = new ScrambledZipfianGenerator(maxMaps);
+    ScrambledZipfianGenerator kesyZipfian = new ScrambledZipfianGenerator(keyCount);
 
     @Setup
     public void setup(TestContext testContext) throws Exception {
@@ -132,6 +134,7 @@ public class AtlassianTest {
             listeners.add(l);
             targetInstance.addDistributedObjectListener(l);
         }
+
         warmup();
     }
 
@@ -231,8 +234,8 @@ public class AtlassianTest {
                     mapIdx = random.nextInt(maxMaps);
                     key = random.nextInt(keyCount);
                 }else{
-                    mapIdx = getLinnearRandomNumber(maxMaps);
-                    key = getLinnearRandomNumber(keyCount);
+                    mapIdx = mapsZipfian.nextInt();
+                    key = kesyZipfian.nextInt();
                 }
 
                 IMap map = targetInstance.getMap(basename + mapIdx);
@@ -290,21 +293,6 @@ public class AtlassianTest {
                     log.info("DID NOT ADD UP");
                 }
             }
-        }
-
-        public int getLinnearRandomNumber(int maxSize){
-            //Get a linearly multiplied random number
-            int randomMultiplier = maxSize * (maxSize + 1) / 2;
-            int randomInt = random.nextInt(randomMultiplier);
-
-            //Linearly iterate through the possible values to find the correct one
-            int linearRandomNumber = 0;
-            for(int i=maxSize; randomInt >= 0; i--){
-                randomInt -= i;
-                linearRandomNumber++;
-            }
-
-            return linearRandomNumber;
         }
     }
 
