@@ -49,13 +49,12 @@ public class AtlassianTest {
 
     public String basename = "map";
     public int threadCount = 10;
-    public int keyLength = 100;
     public int valueLength = 100;
     public int keyCount = 1000;
     public int valueCount = 1000;
     public int maxMaps = 10;
 
-    public boolean randomDistributionUniform=true;
+    public boolean randomDistributionUniform=false;
 
     //add up to 1
     public double writeProb = 0.4;
@@ -70,7 +69,8 @@ public class AtlassianTest {
     //add up to 1   (writeProb is splitup int sub styles)
     public double writeUsingPutProb = 0.15;
     public double writeUsingPutIfAbsent = 0.15;
-    public double writeUsingPutExpireProb = 0.7;
+    public double writeUsingPutExpireProb = 0.4;
+    public double lockAndMod = 0.3;
     //
 
     public int minExpireMillis = 200;
@@ -89,7 +89,7 @@ public class AtlassianTest {
     public int distributedObjectListenerDelayMills = 10;
 
     public int localMapEntryListenerCount = 0;
-    public int localMapEntryListenerDelayMills = 20;
+    public int localMapEntryListenerDelayMills = 0;
 
     public int mapEntryListenerCount = 1;
     public int mapEntryListenerDelayMills = 0;
@@ -97,13 +97,11 @@ public class AtlassianTest {
     public int entryProcessorDelayMills = 100;
 
 
-    private String[] keys;
     private String[] values;
     private TestContext testContext;
     private HazelcastInstance targetInstance;
 
     private List listeners = new ArrayList();
-    private Map<Integer, Object> lastKeyPutinMap = new HashMap();
 
 
     @Setup
@@ -141,12 +139,8 @@ public class AtlassianTest {
     public void warmup() {
         log.info("===WARMUP===");
 
-        keys = new String[keyCount];
         values = new String[valueCount];
 
-        for (int k = 0; k < keys.length; k++) {
-            keys[k] = makeString(keyLength);
-        }
 
         for (int k = 0; k < values.length; k++) {
             values[k] = makeString(valueLength);
@@ -169,11 +163,10 @@ public class AtlassianTest {
             }
 
             int v = 0;
-            for (int k = 0; k < keys.length; k++) {
-                map.put(keys[k], values[v]);
+            for (int k = 0; k < keyCount; k++) {
+                map.put(k, values[v]);
                 v = (v + 1 == values.length ? 0 : v + 1);
             }
-            lastKeyPutinMap.put(i, map.get(keys[keys.length-1]));
         }
         log.info("===WARMUP===");
     }
@@ -212,6 +205,7 @@ public class AtlassianTest {
         return 1;
     }
 
+
     @Verify
     public void verify() throws Exception {
         for(Object o : listeners){
@@ -227,30 +221,26 @@ public class AtlassianTest {
 
     private class Worker implements Runnable {
         private final Random random = new Random();
-        int mapIdx, keyIdx;
+        int mapIdx, key;
 
         public void run() {
-            long iteration = 0;
 
             while (!testContext.isStopped()) {
 
                 if(randomDistributionUniform){
                     mapIdx = random.nextInt(maxMaps);
-                    keyIdx = random.nextInt(keys.length);
+                    key = random.nextInt(keyCount);
                 }else{
                     mapIdx = getLinnearRandomNumber(maxMaps);
-                    keyIdx = getLinnearRandomNumber(keys.length);
+                    key = getLinnearRandomNumber(keyCount);
                 }
 
                 IMap map = targetInstance.getMap(basename + mapIdx);
-                Object key = keys[random.nextInt(keys.length)];
 
                 double chance = random.nextDouble();
                 if (chance < writeProb) {
 
                     Object value = values[random.nextInt(values.length)];
-
-                    lastKeyPutinMap.put(mapIdx, key);
 
                     chance = random.nextDouble();
                     if (chance < writeUsingPutProb) {
@@ -263,29 +253,37 @@ public class AtlassianTest {
                         int expire = random.nextInt(maxExpireMillis) + minExpireMillis;
                         map.put(key, value, expire, TimeUnit.MILLISECONDS);
                     }
+                    else if ( chance < lockAndMod + writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb) {
+
+                        map.lock(key);
+                        try{
+                            value = map.get(key);
+                            if(value==null){
+                                value = values[random.nextInt(values.length)];
+                            }
+                            map.put(key, value);
+                        }finally {
+                            map.unlock(key);
+                        }
+                    }
                     else{
                         log.info("DID NOT ADD UP to (1) "+writeUsingPutExpireProb + writeUsingPutIfAbsent + writeUsingPutProb);
                     }
 
                 }else if(chance < getProb + writeProb){
-                    key = lastKeyPutinMap.get(mapIdx);
                     map.get(key);
                 }
                 else if(chance < clearProb + getProb + writeProb){
                     map.clear();
                 }
                 else if(chance < replaceProb + clearProb + getProb + writeProb){
-                    key = lastKeyPutinMap.get(mapIdx);
                     Object value = values[random.nextInt(values.length)];
                     map.replace(key, value);
                 }
                 else if(chance < removeProb + replaceProb + clearProb + getProb + writeProb){
-                    key = lastKeyPutinMap.get(mapIdx);
                     map.remove(key);
                 }
                 else if(chance < exicuteOnProb + removeProb + replaceProb + clearProb + getProb + writeProb){
-                    //log.info(" process on keys ");
-                    key = lastKeyPutinMap.get(mapIdx);
                     map.executeOnKey(key, new EntryProcessorImpl(entryProcessorDelayMills));
                 }
                 else{
@@ -321,8 +319,8 @@ public class AtlassianTest {
         }
 
         public Object process(Map.Entry entry) {
+            entry.setValue("modded Value");
             Utils.sleepMillis(entryProcessorDelayMills);
-
             return entry.getValue();
         }
 
