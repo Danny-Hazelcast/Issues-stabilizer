@@ -134,11 +134,10 @@ public class AtlassianTest {
             listeners.add(l);
             targetInstance.addDistributedObjectListener(l);
         }
-
-        warmup();
     }
 
-    //@Warmup
+    //happens just on one machien.
+    @Warmup
     public void warmup() {
         log.info("===WARMUP===");
 
@@ -236,6 +235,7 @@ public class AtlassianTest {
                 }else{
                     mapIdx = mapsZipfian.nextInt();
                     key = kesyZipfian.nextInt();
+
                 }
 
                 IMap map = targetInstance.getMap(basename + mapIdx);
