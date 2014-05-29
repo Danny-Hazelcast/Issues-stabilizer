@@ -100,9 +100,6 @@ public class AtlassianTest {
         this.testContext = testContext;
         targetInstance = testContext.getTargetInstance();
 
-        targetInstance = HazelcastClient.newHazelcastClient();
-
-
         for (int k = 0; k < migrationListenerCount; k++) {
             MigrationnListenerImpl l = new MigrationnListenerImpl();
             listeners.add(l);
