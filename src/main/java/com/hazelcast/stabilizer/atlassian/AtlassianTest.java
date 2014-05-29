@@ -15,19 +15,8 @@
  */
 package com.hazelcast.stabilizer.atlassian;
 
-import com.hazelcast.core.DistributedObjectEvent;
-import com.hazelcast.core.DistributedObjectListener;
-import com.hazelcast.core.EntryEvent;
-import com.hazelcast.core.EntryListener;
-import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.core.MemberAttributeEvent;
-import com.hazelcast.core.MembershipEvent;
-import com.hazelcast.core.MembershipListener;
-import com.hazelcast.core.MigrationEvent;
-import com.hazelcast.core.MigrationListener;
+import com.hazelcast.client.HazelcastClient;
+import com.hazelcast.core.*;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.map.EntryBackupProcessor;
@@ -111,10 +100,16 @@ public class AtlassianTest {
         this.testContext = testContext;
         targetInstance = testContext.getTargetInstance();
 
+        targetInstance = HazelcastClient.newHazelcastClient();
+
+
         for (int k = 0; k < migrationListenerCount; k++) {
             MigrationnListenerImpl l = new MigrationnListenerImpl();
             listeners.add(l);
-            targetInstance.getPartitionService().addMigrationListener(l);
+
+            try{
+                targetInstance.getPartitionService().addMigrationListener(l);
+            }catch(UnsupportedOperationException e){}
         }
 
         for (int k = 0; k < membershipListenerCount; k++) {
@@ -485,6 +480,7 @@ public class AtlassianTest {
     }
 
     public static void main(String[] args) throws Throwable {
+
         new TestRunner(new AtlassianTest()).run();
     }
 }
